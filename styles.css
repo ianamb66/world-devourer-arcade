@@ -28,6 +28,8 @@ body {
   overflow: hidden;
   background: var(--black);
   color: var(--ink);
+  touch-action: none;
+  user-select: none;
 }
 
 button {
@@ -51,6 +53,7 @@ button:focus-visible {
   width: 100vw;
   height: 100vh;
   background: var(--black);
+  touch-action: none;
 }
 
 .game-shell::after {
@@ -207,6 +210,86 @@ button:focus-visible {
   margin-top: 6px;
 }
 
+.touch-controls {
+  position: fixed;
+  inset: auto 0 max(18px, env(safe-area-inset-bottom));
+  z-index: 6;
+  display: none;
+  align-items: end;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 0 max(18px, env(safe-area-inset-right)) 0 max(18px, env(safe-area-inset-left));
+  pointer-events: none;
+}
+
+.joystick,
+.touch-button {
+  pointer-events: auto;
+  border: 1px solid var(--line);
+  background: rgb(5 5 5 / 0.58);
+  box-shadow: var(--shadow);
+  backdrop-filter: blur(10px);
+}
+
+.joystick {
+  position: relative;
+  width: 132px;
+  height: 132px;
+  border-radius: 50%;
+  touch-action: none;
+}
+
+.joystick::before {
+  position: absolute;
+  inset: 34px;
+  border: 1px solid rgb(244 241 232 / 0.22);
+  border-radius: 50%;
+  content: "";
+}
+
+.joystick-knob {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 46px;
+  height: 46px;
+  border: 2px solid var(--paper);
+  border-radius: 50%;
+  background: rgb(244 241 232 / 0.14);
+  transform: translate(-50%, -50%);
+}
+
+.touch-actions {
+  display: grid;
+  grid-template-columns: 76px 92px;
+  gap: 10px;
+  align-items: end;
+}
+
+.touch-button {
+  min-height: 76px;
+  border-radius: 50%;
+  color: var(--paper);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 950;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  touch-action: manipulation;
+}
+
+.moon-touch {
+  width: 92px;
+  height: 92px;
+  background: var(--paper);
+  color: var(--black);
+}
+
+.pulse-touch {
+  width: 76px;
+  height: 76px;
+}
+
 .overlay {
   position: fixed;
   inset: 0;
@@ -299,11 +382,36 @@ button:focus-visible {
 }
 
 @media (max-width: 760px) {
+  .hud {
+    background: rgb(5 5 5 / 0.46);
+  }
+
+  .top-left {
+    width: 150px;
+    padding: 10px;
+  }
+
+  .top-left .label {
+    margin-bottom: 4px;
+    font-size: 0.56rem;
+    letter-spacing: 0.18em;
+  }
+
+  .big-stat span {
+    font-size: 2.25rem;
+  }
+
+  .big-stat small {
+    font-size: 0.62rem;
+  }
+
   .top-right {
     top: auto;
-    bottom: 126px;
+    bottom: 170px;
     right: max(16px, env(safe-area-inset-right));
-    width: 148px;
+    width: 132px;
+    padding: 8px;
+    font-size: 0.78rem;
   }
 
   .bottom-left {
@@ -311,12 +419,96 @@ button:focus-visible {
   }
 
   .bottom-right {
-    left: max(16px, env(safe-area-inset-left));
-    right: auto;
-    width: calc(100vw - 32px);
-    text-align: left;
+    top: max(16px, env(safe-area-inset-top));
+    left: auto;
+    right: max(16px, env(safe-area-inset-right));
+    bottom: auto;
+    width: 148px;
+    padding: 8px;
+    font-size: 0.7rem;
   }
 
+  .touch-controls {
+    display: flex;
+  }
+
+  .poster-card {
+    max-height: calc(100svh - 28px);
+    overflow: auto;
+    padding: 22px;
+  }
+
+  .poster-card h1,
+  .poster-card h2 {
+    font-size: clamp(2.6rem, 18vw, 5rem);
+  }
+
+  .poster-card p {
+    font-size: 0.95rem;
+  }
+}
+
+@media (max-width: 430px) {
+  .top-left {
+    left: 10px;
+    top: 10px;
+  }
+
+  .bottom-right {
+    right: 10px;
+    top: 10px;
+  }
+
+  .top-right {
+    right: 10px;
+    bottom: 158px;
+  }
+
+  .touch-controls {
+    padding-inline: 12px;
+  }
+
+  .joystick {
+    width: 116px;
+    height: 116px;
+  }
+
+  .joystick-knob {
+    width: 42px;
+    height: 42px;
+  }
+
+  .touch-actions {
+    grid-template-columns: 68px 82px;
+  }
+
+  .pulse-touch {
+    width: 68px;
+    height: 68px;
+  }
+
+  .moon-touch {
+    width: 82px;
+    height: 82px;
+  }
+}
+
+@media (max-width: 760px) and (orientation: landscape) {
+  .top-right {
+    bottom: 16px;
+    right: 190px;
+  }
+
+  .touch-controls {
+    align-items: center;
+  }
+
+  .poster-card {
+    max-height: calc(100svh - 20px);
+  }
+}
+
+@media (max-width: 760px) {
   .rules-grid {
     grid-template-columns: 1fr;
   }

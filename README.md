@@ -20,6 +20,13 @@ Juego arcade web en canvas. Eres un devorador de mundos en una arena blanco/negr
 - Click / `Space`: lanzar una luna capturada.
 - `E`: pulso gravitacional.
 
+## Controles moviles
+
+- Joystick izquierdo: movimiento y direccion de lanzamiento.
+- Boton **Luna**: lanzar luna capturada.
+- Boton **Pulso**: activar pulso gravitacional.
+- Si lanzas sin mover el joystick, la luna apunta al planeta mas cercano.
+
 ## Ejecutar local
 
 ```bash
@@ -37,4 +44,3 @@ http://localhost:4180
 - `index.html`: estructura de HUD y overlays.
 - `styles.css`: dirección visual blanco/negro de arena arcade.
 - `app.js`: loop, física, entidades, IA de civilizaciones y render canvas.
-

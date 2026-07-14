@@ -17,10 +17,15 @@ const ui = {
   gameOverCopy: document.querySelector("#gameOverCopy"),
   startButton: document.querySelector("#startButton"),
   restartButton: document.querySelector("#restartButton"),
+  joystick: document.querySelector("#joystick"),
+  joystickKnob: document.querySelector("#joystickKnob"),
+  pulseTouchButton: document.querySelector("#pulseTouchButton"),
+  moonTouchButton: document.querySelector("#moonTouchButton"),
 };
 
 const keys = new Set();
 const pointer = { x: 0, y: 0, down: false, active: false };
+const touchMove = { x: 0, y: 0, active: false, id: null };
 let width = 0;
 let height = 0;
 let dpr = 1;
@@ -213,6 +218,11 @@ function updatePlayer(dt) {
     const distance = dist(p, pointer);
     ax += Math.cos(a) * clamp(distance / 160, 0, 1);
     ay += Math.sin(a) * clamp(distance / 160, 0, 1);
+  }
+
+  if (touchMove.active) {
+    ax += touchMove.x;
+    ay += touchMove.y;
   }
 
   const len = Math.hypot(ax, ay) || 1;
@@ -409,11 +419,28 @@ function updateMoons(dt) {
   });
 }
 
+function getLaunchAngle() {
+  const p = game.player;
+  if (touchMove.active && Math.hypot(touchMove.x, touchMove.y) > 0.12) {
+    return Math.atan2(touchMove.y, touchMove.x);
+  }
+  if (pointer.active) {
+    return angleTo(p, pointer);
+  }
+  if (Math.hypot(p.vx, p.vy) > 6) {
+    return Math.atan2(p.vy, p.vx);
+  }
+  const nearest = game.planets
+    .map((planet) => ({ planet, d: dist(p, planet) }))
+    .sort((a, b) => a.d - b.d)[0]?.planet;
+  return nearest ? angleTo(p, nearest) : -Math.PI / 2;
+}
+
 function launchMoon() {
   if (!game.running || !game.playerMoons.length) return;
   const p = game.player;
   const moon = game.playerMoons.shift();
-  const a = pointer.active ? angleTo(p, pointer) : Math.atan2(p.vy, p.vx) || -Math.PI / 2;
+  const a = getLaunchAngle();
   game.bullets.push({
     x: p.x + Math.cos(moon.angle) * moon.orbit,
     y: p.y + Math.sin(moon.angle) * moon.orbit,
@@ -693,6 +720,62 @@ canvas.addEventListener("pointerdown", (event) => {
 });
 canvas.addEventListener("pointerup", () => {
   pointer.down = false;
+});
+
+function setJoystickFromEvent(event) {
+  const rect = ui.joystick.getBoundingClientRect();
+  const cx = rect.left + rect.width / 2;
+  const cy = rect.top + rect.height / 2;
+  const dx = event.clientX - cx;
+  const dy = event.clientY - cy;
+  const max = rect.width * 0.36;
+  const distance = Math.min(max, Math.hypot(dx, dy));
+  const angle = Math.atan2(dy, dx);
+  const knobX = Math.cos(angle) * distance;
+  const knobY = Math.sin(angle) * distance;
+  touchMove.x = knobX / max;
+  touchMove.y = knobY / max;
+  ui.joystickKnob.style.transform = `translate(calc(-50% + ${knobX}px), calc(-50% + ${knobY}px))`;
+}
+
+function resetJoystick() {
+  touchMove.x = 0;
+  touchMove.y = 0;
+  touchMove.active = false;
+  touchMove.id = null;
+  ui.joystickKnob.style.transform = "translate(-50%, -50%)";
+}
+
+ui.joystick.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  ui.joystick.setPointerCapture(event.pointerId);
+  touchMove.active = true;
+  touchMove.id = event.pointerId;
+  setJoystickFromEvent(event);
+});
+
+ui.joystick.addEventListener("pointermove", (event) => {
+  if (touchMove.id !== event.pointerId) return;
+  event.preventDefault();
+  setJoystickFromEvent(event);
+});
+
+ui.joystick.addEventListener("pointerup", (event) => {
+  if (touchMove.id !== event.pointerId) return;
+  event.preventDefault();
+  resetJoystick();
+});
+
+ui.joystick.addEventListener("pointercancel", resetJoystick);
+
+ui.moonTouchButton.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  launchMoon();
+});
+
+ui.pulseTouchButton.addEventListener("pointerdown", (event) => {
+  event.preventDefault();
+  gravityPulse();
 });
 
 ui.startButton.addEventListener("click", startGame);
