@@ -31,6 +31,8 @@ let height = 0;
 let dpr = 1;
 let lastTime = 0;
 let rafId = 0;
+let world = { width: 0, height: 0 };
+let camera = { x: 0, y: 0 };
 
 const game = {
   running: false,
@@ -43,6 +45,7 @@ const game = {
   particles: [],
   playerMoons: [],
   stars: [],
+  dust: [],
   messages: [],
   player: null,
 };
@@ -65,30 +68,64 @@ function angleTo(a, b) {
   return Math.atan2(b.y - a.y, b.x - a.x);
 }
 
+function setWorldSize() {
+  world = {
+    width: Math.max(2200, width * 2.75),
+    height: Math.max(1700, height * 2.35),
+  };
+}
+
+function makeStars() {
+  game.stars = Array.from({ length: 360 }, () => ({
+    x: Math.random() * world.width,
+    y: Math.random() * world.height,
+    r: Math.random() > 0.9 ? 1.35 : 0.65,
+    a: rand(0.1, 0.62),
+  }));
+  game.dust = Array.from({ length: 210 }, () => ({
+    x: Math.random() * world.width,
+    y: Math.random() * world.height,
+    w: rand(18, 90),
+    a: rand(0.025, 0.08),
+    tilt: rand(-0.6, 0.6),
+  }));
+}
+
+function updateCamera() {
+  if (!game.player) return;
+  camera.x = clamp(game.player.x - width / 2, 0, Math.max(0, world.width - width));
+  camera.y = clamp(game.player.y - height / 2, 0, Math.max(0, world.height - height));
+}
+
+function screenToWorld(point) {
+  return {
+    x: point.x + camera.x,
+    y: point.y + camera.y,
+  };
+}
+
 function resize() {
   dpr = Math.min(window.devicePixelRatio || 1, 2);
   width = window.innerWidth;
   height = window.innerHeight;
+  const oldWorld = { ...world };
   canvas.width = Math.floor(width * dpr);
   canvas.height = Math.floor(height * dpr);
   canvas.style.width = `${width}px`;
   canvas.style.height = `${height}px`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  setWorldSize();
 
-  if (!game.stars.length) {
-    game.stars = Array.from({ length: 150 }, () => ({
-      x: Math.random() * width,
-      y: Math.random() * height,
-      r: Math.random() > 0.88 ? 1.4 : 0.7,
-      a: rand(0.15, 0.72),
-    }));
+  if (!game.stars.length || Math.abs(oldWorld.width - world.width) > 140 || Math.abs(oldWorld.height - world.height) > 140) {
+    makeStars();
   }
+  updateCamera();
 }
 
 function makePlayer() {
   return {
-    x: width / 2,
-    y: height / 2,
+    x: world.width / 2,
+    y: world.height / 2,
     vx: 0,
     vy: 0,
     r: 22,
@@ -132,15 +169,18 @@ function createPlanet(civClass, x, y) {
   };
 }
 
-function spawnPlanet(forceClass = null) {
-  const margin = 90;
-  let x = rand(margin, width - margin);
-  let y = rand(margin, height - margin);
-  const player = game.player ?? { x: width / 2, y: height / 2 };
+function spawnPlanet(forceClass = null, preferred = null) {
+  const margin = 180;
+  let x = preferred?.x ?? rand(margin, world.width - margin);
+  let y = preferred?.y ?? rand(margin, world.height - margin);
+  const player = game.player ?? { x: world.width / 2, y: world.height / 2 };
 
-  for (let i = 0; i < 24 && Math.hypot(x - player.x, y - player.y) < 210; i += 1) {
-    x = rand(margin, width - margin);
-    y = rand(margin, height - margin);
+  for (let i = 0; !preferred && i < 60; i += 1) {
+    const playerGap = Math.hypot(x - player.x, y - player.y);
+    const planetGap = game.planets.every((planet) => Math.hypot(x - planet.x, y - planet.y) > 260);
+    if (playerGap > 360 && planetGap) break;
+    x = rand(margin, world.width - margin);
+    y = rand(margin, world.height - margin);
   }
 
   const roll = Math.random();
@@ -150,9 +190,18 @@ function spawnPlanet(forceClass = null) {
 
 function seedArena() {
   game.planets = [];
-  const count = width < 760 ? 7 : 10;
-  for (let i = 0; i < count; i += 1) {
-    spawnPlanet(i < 3 ? 1 : null);
+  const count = width < 760 ? 6 : 8;
+  const player = game.player ?? { x: world.width / 2, y: world.height / 2 };
+  const ring = width < 760 ? Math.min(height * 0.48, 430) : Math.min(width * 0.38, 560);
+  for (let i = 0; i < 3; i += 1) {
+    const a = -Math.PI / 2 + i * 2.15 + rand(-0.28, 0.28);
+    spawnPlanet(1, {
+      x: clamp(player.x + Math.cos(a) * ring, 220, world.width - 220),
+      y: clamp(player.y + Math.sin(a) * ring, 220, world.height - 220),
+    });
+  }
+  for (let i = 3; i < count; i += 1) {
+    spawnPlanet();
   }
 }
 
@@ -168,6 +217,7 @@ function startGame() {
   game.messages = [];
   game.player = makePlayer();
   seedArena();
+  updateCamera();
   ui.startOverlay.classList.remove("is-visible");
   ui.gameOverOverlay.classList.remove("is-visible");
   lastTime = performance.now();
@@ -204,6 +254,24 @@ function addParticles(x, y, count, speed = 90, size = 2) {
   }
 }
 
+function addSiphonParticles(planet, count, strength = 1) {
+  for (let i = 0; i < count; i += 1) {
+    const a = rand(0, TAU);
+    const radius = rand(planet.r * 0.15, planet.r * 1.08);
+    game.particles.push({
+      x: planet.x + Math.cos(a) * radius,
+      y: planet.y + Math.sin(a) * radius,
+      vx: Math.cos(a) * rand(10, 70),
+      vy: Math.sin(a) * rand(10, 70),
+      r: rand(0.9, 2.6),
+      life: rand(0.55, 1.2),
+      maxLife: 1.2,
+      pull: true,
+      pullStrength: strength,
+    });
+  }
+}
+
 function updatePlayer(dt) {
   const p = game.player;
   let ax = 0;
@@ -214,8 +282,9 @@ function updatePlayer(dt) {
   if (keys.has("d") || keys.has("arrowright")) ax += 1;
 
   if (pointer.down && pointer.active) {
-    const a = angleTo(p, pointer);
-    const distance = dist(p, pointer);
+    const pointerWorld = screenToWorld(pointer);
+    const a = angleTo(p, pointerWorld);
+    const distance = dist(p, pointerWorld);
     ax += Math.cos(a) * clamp(distance / 160, 0, 1);
     ay += Math.sin(a) * clamp(distance / 160, 0, 1);
   }
@@ -231,8 +300,8 @@ function updatePlayer(dt) {
   p.vy += (ay / len) * speed * dt * 5.2;
   p.vx *= Math.pow(0.08, dt);
   p.vy *= Math.pow(0.08, dt);
-  p.x = clamp(p.x + p.vx * dt, p.r, width - p.r);
-  p.y = clamp(p.y + p.vy * dt, p.r, height - p.r);
+  p.x = clamp(p.x + p.vx * dt, p.r, world.width - p.r);
+  p.y = clamp(p.y + p.vy * dt, p.r, world.height - p.r);
   p.r = 17 + Math.sqrt(p.mass) * 1.2;
   p.mass -= dt * (1.5 + game.wave * 0.08);
   p.pulseCooldown = Math.max(0, p.pulseCooldown - dt);
@@ -252,10 +321,10 @@ function updatePlanets(dt) {
     planet.evolveTimer -= dt;
     planet.x += planet.vx * dt;
     planet.y += planet.vy * dt;
-    if (planet.x < planet.r || planet.x > width - planet.r) planet.vx *= -1;
-    if (planet.y < planet.r || planet.y > height - planet.r) planet.vy *= -1;
-    planet.x = clamp(planet.x, planet.r, width - planet.r);
-    planet.y = clamp(planet.y, planet.r, height - planet.r);
+    if (planet.x < planet.r || planet.x > world.width - planet.r) planet.vx *= -1;
+    if (planet.y < planet.r || planet.y > world.height - planet.r) planet.vy *= -1;
+    planet.x = clamp(planet.x, planet.r, world.width - planet.r);
+    planet.y = clamp(planet.y, planet.r, world.height - planet.r);
 
     if (planet.regen > 0.7) {
       planet.regen = 0;
@@ -309,7 +378,7 @@ function updatePlanets(dt) {
       } else {
         planet.hp -= (34 + p.r) * dt;
         p.mass += (1.2 + planet.class * 0.7) * dt;
-        addParticles(planet.x, planet.y, 1, 40, 2);
+        addSiphonParticles(planet, 2, 1.3);
       }
     }
   }
@@ -323,7 +392,8 @@ function updatePlanets(dt) {
       p.maxMass = Math.max(p.maxMass, p.mass);
       game.score += reward;
       game.eaten[planet.class] += 1;
-      addParticles(planet.x, planet.y, 32, 180, 3.5);
+      addSiphonParticles(planet, 58, 1.8);
+      addParticles(planet.x, planet.y, 24, 180, 3.4);
       addMessage(`Planeta clase ${planet.class} devorado. +${reward}`);
     }
   });
@@ -332,7 +402,7 @@ function updatePlanets(dt) {
     game.planets.splice(eaten[i], 1);
   }
 
-  while (game.planets.length < 7 + game.wave) {
+  while (game.planets.length < 6 + Math.min(game.wave, 5)) {
     spawnPlanet();
   }
 }
@@ -399,7 +469,13 @@ function updateBullets(dt) {
       }
     }
   }
-  game.bullets = game.bullets.filter((bullet) => bullet.life > 0 && bullet.x > -80 && bullet.x < width + 80 && bullet.y > -80 && bullet.y < height + 80);
+  game.bullets = game.bullets.filter((bullet) => (
+    bullet.life > 0
+    && bullet.x > -140
+    && bullet.x < world.width + 140
+    && bullet.y > -140
+    && bullet.y < world.height + 140
+  ));
 }
 
 function damagePlayer(amount, x, y) {
@@ -425,7 +501,7 @@ function getLaunchAngle() {
     return Math.atan2(touchMove.y, touchMove.x);
   }
   if (pointer.active) {
-    return angleTo(p, pointer);
+    return angleTo(p, screenToWorld(pointer));
   }
   if (Math.hypot(p.vx, p.vy) > 6) {
     return Math.atan2(p.vy, p.vx);
@@ -480,6 +556,12 @@ function gravityPulse() {
 
 function updateParticles(dt) {
   for (const particle of game.particles) {
+    if (particle.pull && game.player) {
+      const a = angleTo(particle, game.player);
+      const pull = 520 * (particle.pullStrength || 1);
+      particle.vx += Math.cos(a) * pull * dt;
+      particle.vy += Math.sin(a) * pull * dt;
+    }
     particle.x += particle.vx * dt;
     particle.y += particle.vy * dt;
     particle.vx *= Math.pow(0.05, dt);
@@ -510,18 +592,33 @@ function update(dt) {
   updateBullets(dt);
   updateMoons(dt);
   updateParticles(dt);
+  updateCamera();
   updateHud();
 }
 
 function draw() {
   ctx.clearRect(0, 0, width, height);
   drawBackground();
+  ctx.save();
+  ctx.translate(-camera.x, -camera.y);
+  drawWorldFrame();
   game.planets.forEach(drawPlanet);
   drawBullets();
   drawPlayerMoons();
   drawPlayer();
   drawParticles();
+  ctx.restore();
   drawMessages();
+}
+
+function drawWorldFrame() {
+  ctx.save();
+  ctx.strokeStyle = "rgba(244,241,232,0.16)";
+  ctx.lineWidth = 2;
+  ctx.setLineDash([18, 18]);
+  ctx.strokeRect(24, 24, world.width - 48, world.height - 48);
+  ctx.setLineDash([]);
+  ctx.restore();
 }
 
 function drawBackground() {
@@ -530,16 +627,39 @@ function drawBackground() {
   ctx.save();
   ctx.globalAlpha = 0.7;
   for (const star of game.stars) {
+    const sx = star.x - camera.x * 0.82;
+    const sy = star.y - camera.y * 0.82;
+    if (sx < -6 || sy < -6 || sx > width + 6 || sy > height + 6) continue;
     ctx.fillStyle = `rgba(244,241,232,${star.a})`;
-    ctx.fillRect(star.x, star.y, star.r, star.r);
+    ctx.fillRect(sx, sy, star.r, star.r);
+  }
+  for (const dust of game.dust) {
+    const sx = dust.x - camera.x * 0.55;
+    const sy = dust.y - camera.y * 0.55;
+    if (sx < -120 || sy < -120 || sx > width + 120 || sy > height + 120) continue;
+    ctx.save();
+    ctx.translate(sx, sy);
+    ctx.rotate(dust.tilt);
+    ctx.fillStyle = `rgba(244,241,232,${dust.a})`;
+    ctx.fillRect(-dust.w / 2, 0, dust.w, 1);
+    ctx.restore();
   }
   ctx.restore();
-  ctx.strokeStyle = "rgba(244,241,232,0.06)";
+  ctx.strokeStyle = "rgba(244,241,232,0.045)";
   ctx.lineWidth = 1;
-  for (let x = (game.time * 8) % 64; x < width; x += 64) {
+  const grid = 96;
+  const offsetX = -((camera.x - game.time * 5) % grid);
+  const offsetY = -(camera.y % grid);
+  for (let x = offsetX; x < width; x += grid) {
     ctx.beginPath();
     ctx.moveTo(x, 0);
     ctx.lineTo(x, height);
+    ctx.stroke();
+  }
+  for (let y = offsetY; y < height; y += grid) {
+    ctx.beginPath();
+    ctx.moveTo(0, y);
+    ctx.lineTo(width, y);
     ctx.stroke();
   }
 }
@@ -547,17 +667,36 @@ function drawBackground() {
 function drawPlanet(planet) {
   ctx.save();
   ctx.translate(planet.x, planet.y);
-  ctx.strokeStyle = "rgba(244,241,232,0.24)";
+  ctx.strokeStyle = "rgba(244,241,232,0.18)";
   ctx.lineWidth = 1;
   ctx.beginPath();
   ctx.arc(0, 0, planet.r + 13 + planet.class * 4, 0, TAU);
   ctx.stroke();
 
   const hpRatio = clamp(planet.hp / planet.hpMax, 0, 1);
-  ctx.fillStyle = `rgba(244,241,232,${0.18 + planet.class * 0.1})`;
+  ctx.fillStyle = `rgba(244,241,232,${0.09 + planet.class * 0.07})`;
   ctx.beginPath();
   ctx.arc(0, 0, planet.r, 0, TAU);
   ctx.fill();
+
+  ctx.fillStyle = `rgba(244,241,232,${0.24 + planet.class * 0.08})`;
+  const grainCount = 34 + planet.class * 22;
+  for (let i = 0; i < grainCount; i += 1) {
+    const angle = i * 2.399 + planet.age * 0.08;
+    const wave = Math.sin(i * 1.7 + game.time * 1.8) * 0.18;
+    const radius = planet.r * Math.sqrt(((i * 37) % 100) / 100) * (0.9 + wave);
+    const x = Math.cos(angle) * radius;
+    const y = Math.sin(angle) * radius;
+    const size = i % 7 === 0 ? 2 : 1.1;
+    ctx.fillRect(x, y, size, size);
+  }
+
+  ctx.strokeStyle = "rgba(244,241,232,0.2)";
+  for (let i = 0; i < planet.class + 1; i += 1) {
+    ctx.beginPath();
+    ctx.ellipse(0, 0, planet.r + 5 + i * 7, planet.r * (0.28 + i * 0.04), planet.age * 0.04 + i * 0.7, 0, TAU);
+    ctx.stroke();
+  }
 
   ctx.strokeStyle = "#f4f1e8";
   ctx.lineWidth = 2;
@@ -633,21 +772,59 @@ function drawPlayer() {
   const p = game.player;
   ctx.save();
   ctx.translate(p.x, p.y);
+  const velocityAngle = Math.atan2(p.vy || 0.01, p.vx || 0.01);
+  const velocity = clamp(Math.hypot(p.vx, p.vy) / 260, 0, 1);
+
   ctx.fillStyle = "#050505";
-  ctx.strokeStyle = "#f4f1e8";
-  ctx.lineWidth = 3;
+  ctx.strokeStyle = "rgba(244,241,232,0.82)";
+  ctx.lineWidth = 2;
   ctx.beginPath();
-  ctx.arc(0, 0, p.r, 0, TAU);
+  for (let i = 0; i <= 90; i += 1) {
+    const a = (i / 90) * TAU;
+    const magneticPull = Math.cos(a - velocityAngle) * velocity * 0.22;
+    const spike = Math.sin(a * 9 + game.time * 5.2) * 0.12 + Math.sin(a * 17 - game.time * 3) * 0.06;
+    const radius = p.r * (0.84 + magneticPull + spike);
+    const x = Math.cos(a) * radius;
+    const y = Math.sin(a) * radius;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  }
+  ctx.closePath();
   ctx.fill();
   ctx.stroke();
-  ctx.globalAlpha = 0.35;
-  ctx.beginPath();
-  ctx.arc(0, 0, p.r + 10 + Math.sin(game.time * 7) * 2, 0, TAU);
-  ctx.stroke();
+
+  ctx.globalAlpha = 0.92;
+  for (let i = 0; i < 120; i += 1) {
+    const a = i * 2.399 + game.time * (0.45 + (i % 9) * 0.035);
+    const ring = (i % 5) / 5;
+    const turbulence = Math.sin(i * 4.1 + game.time * 6) * 5;
+    const radius = p.r * (0.35 + ring * 0.92) + turbulence;
+    const x = Math.cos(a) * radius;
+    const y = Math.sin(a) * radius;
+    const size = i % 11 === 0 ? 2.8 : 1.4;
+    ctx.fillStyle = i % 4 === 0 ? "rgba(244,241,232,0.35)" : "#f4f1e8";
+    ctx.fillRect(x, y, size, size);
+  }
+
+  ctx.globalAlpha = 0.3;
+  ctx.strokeStyle = "#f4f1e8";
+  for (let i = 0; i < 3; i += 1) {
+    ctx.beginPath();
+    ctx.ellipse(
+      0,
+      0,
+      p.r + 14 + i * 8 + Math.sin(game.time * 5 + i) * 2,
+      p.r * (0.45 + i * 0.08),
+      velocityAngle + i * 0.68 + game.time * 0.25,
+      0,
+      TAU,
+    );
+    ctx.stroke();
+  }
   ctx.globalAlpha = 1;
   ctx.fillStyle = "#f4f1e8";
   ctx.beginPath();
-  ctx.arc(0, 0, Math.max(4, p.r * 0.18), 0, TAU);
+  ctx.arc(0, 0, Math.max(3.5, p.r * 0.14), 0, TAU);
   ctx.fill();
   ctx.restore();
 }
@@ -665,10 +842,11 @@ function drawMessages() {
   ctx.save();
   ctx.textAlign = "center";
   ctx.font = "900 18px ui-sans-serif, system-ui";
+  const startY = width < 760 ? 122 : 86;
   game.messages.forEach((message, index) => {
     ctx.globalAlpha = clamp(message.life, 0, 1);
     ctx.fillStyle = "#f4f1e8";
-    ctx.fillText(message.text.toUpperCase(), width / 2, 86 + index * 24);
+    ctx.fillText(message.text.toUpperCase(), width / 2, startY + index * 24);
   });
   ctx.restore();
 }
@@ -784,4 +962,5 @@ ui.restartButton.addEventListener("click", startGame);
 resize();
 game.player = makePlayer();
 seedArena();
+updateCamera();
 draw();
